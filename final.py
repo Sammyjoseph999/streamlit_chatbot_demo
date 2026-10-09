@@ -3,7 +3,19 @@ from openai import OpenAI
 import tiktoken
 import streamlit as st
 
-api_key = st.secrets["OPENAI_API_KEY"] or os.getenv("OPENAI_API_KEY")
+def get_api_key():
+    """Read the key from Streamlit secrets, falling back to the environment."""
+    try:
+        key = st.secrets.get("OPENAI_API_KEY")
+    except Exception:
+        # No secrets.toml file
+        key = None
+    return key or os.getenv("OPENAI_API_KEY")
+
+api_key = get_api_key()
+if not api_key:
+    st.error("No OpenAI API key found. Add OPENAI_API_KEY to .streamlit/secrets.toml or set it as an environment variable.")
+    st.stop()
 
 client = OpenAI(api_key=api_key)
 MODEL = "gpt-4.1-nano-2025-04-14"
@@ -47,13 +59,19 @@ def chat(user_input, temperature=TEMPERATURE, max_tokens=MAX_TOKENS):
 
     enforce_token_budget(messages)
 
-    with st.spinner("Thinking..."):
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
+    try:
+        with st.spinner("Thinking..."):
+            response = client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+    except Exception as e:
+        # Drop the unanswered message so the history stays in user/assistant pairs
+        messages.pop()
+        st.error(f"The request failed: {e}")
+        return None
     reply = response.choices[0].message.content
     messages.append({"role": "assistant", "content": reply})
     return reply
